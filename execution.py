@@ -120,6 +120,7 @@ class CacheType(Enum):
 
 class CacheSet:
     def __init__(self, cache_type=None, cache_args={}):
+        self.durable_store = None
         if cache_type == CacheType.NONE:
             self.init_null_cache()
             logging.info("Disabling intermediate node cache.")
@@ -133,6 +134,9 @@ class CacheSet:
             logging.info("Using LRU cache")
         else:
             self.init_classic_cache()
+
+        if cache_type != CacheType.NONE:
+            self.init_durable_cache(cache_args.get("durable"))
 
         self.all = [self.outputs, self.objects]
 
@@ -152,6 +156,26 @@ class CacheSet:
     def init_null_cache(self):
         self.outputs = NullCache()
         self.objects = NullCache()
+
+    def init_durable_cache(self, durable_config):
+        if not durable_config:
+            return
+        directory = durable_config.get("directory")
+        if not directory:
+            return
+        from comfy_execution.durable_cache import open_durable_cache
+        self.durable_store = open_durable_cache(
+            directory,
+            max_bytes=int(durable_config.get("max_bytes", 8 * 1024 ** 3)),
+            ttl_seconds=durable_config.get("ttl_seconds"),
+        )
+        logging.info("Using durable cache at %s", directory)
+
+    def close(self):
+        if self.durable_store is not None:
+            from comfy_execution.durable_cache import close_durable_cache
+            close_durable_cache(self.durable_store)
+            self.durable_store = None
 
     def recursive_debug_dump(self):
         result = {
@@ -690,6 +714,8 @@ class PromptExecutor:
         self.reset()
 
     def reset(self):
+        if hasattr(self, "caches"):
+            self.caches.close()
         self.caches = CacheSet(cache_type=self.cache_type, cache_args=self.cache_args)
         self.status_messages = []
         self.success = True
@@ -743,6 +769,21 @@ class PromptExecutor:
                     provider.on_prompt_end(prompt_id)
             except Exception as e:
                 _cache_logger.warning(f"Cache provider {provider.__class__.__name__} error on {event}: {e}")
+
+    async def _drain_cache_providers(self):
+        if not _has_cache_providers():
+            return
+
+        for provider in _get_cache_providers():
+            drain = getattr(provider, "on_drain", None)
+            if drain is None or not callable(drain):
+                continue
+            try:
+                result = drain()
+                if inspect.isawaitable(result):
+                    await result
+            except Exception as e:
+                _cache_logger.warning(f"Cache provider {provider.__class__.__name__} error on drain: {e}")
 
     def execute(self, prompt, prompt_id, extra_data={}, execute_outputs=[]):
         asyncio.run(self.execute_async(prompt, prompt_id, extra_data, execute_outputs))
@@ -873,6 +914,7 @@ class PromptExecutor:
             comfy.memory_management.set_ram_cache_release_state(None, 0)
             self.prompt_model_tracker.end()
             self._notify_prompt_lifecycle("end", prompt_id)
+            await self._drain_cache_providers()
 
 
 async def validate_inputs(prompt_id, prompt, item, validated, visiting=None):

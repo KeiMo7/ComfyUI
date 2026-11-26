@@ -8,6 +8,8 @@ class CacheContext:
     node_id: str
     class_type: str
     cache_key_hash: str  # SHA256 hex digest
+    scope: str = 'root'
+    parent_node_id: str | None = None
 
 
 @dataclass

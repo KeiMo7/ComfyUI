@@ -357,7 +357,16 @@ def prompt_worker(q, server_instance, asset_manager):
     elif args.cache_none:
         cache_type = execution.CacheType.NONE
 
-    e = execution.PromptExecutor(server_instance, cache_type=cache_type, cache_args={ "lru" : args.cache_lru, "ram" : cache_ram, "ram_inactive" : cache_ram_inactive }, asset_manager=asset_manager )
+    durable_cache = None
+    if args.durable_cache:
+        ttl_seconds = args.durable_cache_ttl_hours * 3600 if args.durable_cache_ttl_hours > 0 else None
+        durable_cache = {
+            "directory": args.durable_cache,
+            "max_bytes": int(args.durable_cache_max_gb * (1024 ** 3)),
+            "ttl_seconds": ttl_seconds,
+        }
+
+    e = execution.PromptExecutor(server_instance, cache_type=cache_type, cache_args={ "lru" : args.cache_lru, "ram" : cache_ram, "ram_inactive" : cache_ram_inactive, "durable" : durable_cache }, asset_manager=asset_manager )
     last_gc_collect = 0
     need_gc = False
     gc_collect_interval = 10.0

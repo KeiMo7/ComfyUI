@@ -302,7 +302,8 @@ class BasicCache:
                         _logger.warning(f"Provider {provider.__class__.__name__} returned invalid outputs")
                         continue
                     from execution import CacheEntry
-                    return CacheEntry(ui=result.ui, outputs=list(result.outputs))
+                    # CacheValue.ui is always a dict; an empty one means the node had no UI.
+                    return CacheEntry(ui=result.ui or None, outputs=list(result.outputs))
             except Exception as e:
                 _logger.warning(f"Cache provider {provider.__class__.__name__} error on lookup: {e}")
 
@@ -325,10 +326,15 @@ class BasicCache:
             cache_key_hash = _serialize_cache_key(cache_key)
             if cache_key_hash is None:
                 return None
+            parent_node_id = None
+            if self.initialized and self.dynprompt:
+                parent_node_id = self.dynprompt.get_parent_node_id(node_id)
             return CacheContext(
                 node_id=node_id,
                 class_type=self._get_class_type(node_id),
                 cache_key_hash=cache_key_hash,
+                scope='subgraph' if parent_node_id is not None else 'root',
+                parent_node_id=parent_node_id,
             )
         except Exception as e:
             _logger.warning(f"Failed to build cache context for node {node_id}: {e}")
@@ -338,7 +344,7 @@ class BasicCache:
         subcache_key = self.cache_key_set.get_subcache_key(node_id)
         subcache = self.subcaches.get(subcache_key, None)
         if subcache is None:
-            subcache = BasicCache(self.key_class)
+            subcache = BasicCache(self.key_class, enable_providers=self.enable_providers)
             self.subcaches[subcache_key] = subcache
         await subcache.set_prompt(self.dynprompt, children_ids, self.is_changed_cache)
         return subcache

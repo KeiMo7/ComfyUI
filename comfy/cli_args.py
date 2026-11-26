@@ -141,6 +141,10 @@ cache_group.add_argument("--cache-classic", action="store_true", help="Use the o
 cache_group.add_argument("--cache-lru", type=int, default=0, help="Use LRU caching with a maximum of N node results cached. May use more RAM/VRAM.")
 cache_group.add_argument("--cache-none", action="store_true", help="Reduced RAM/VRAM usage at the expense of executing every node for each run.")
 cache_group.add_argument("--high-ram", action="store_true", help="Can improve performance slightly on high RAM or on systems where pagefile use is preferred over model loading.")
+cache_group.add_argument("--durable-cache", type=str, default=None, metavar="DIR", help="Additionally persist cacheable node results to DIR so later runs and other processes can reuse them. Only CPU tensor outputs are stored.")
+
+parser.add_argument("--durable-cache-max-gb", type=float, default=8, help="Maximum size in GB of the durable cache directory. Least recently used entries are evicted first.")
+parser.add_argument("--durable-cache-ttl-hours", type=float, default=0, help="Age in hours after which durable cache entries expire. 0 disables expiration.")
 
 parser.add_argument("--force-output-rerun", action="store_true", help="Re-execute output nodes (OUTPUT_NODE=True) on every run even when their result is cached, so they write their output files again. Upstream nodes stay cached. API nodes are excluded because re-running them repeats a paid external call. Intended for multi-tenant servers that remove output files after each job.")
 
